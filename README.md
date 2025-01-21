@@ -1,0 +1,1 @@
+### This is a README dedicated to MNL_Limited_Adaptivity.
