@@ -1,5 +1,5 @@
 import numpy as np
-from barycentric_spanner import BarycentricSpanner
+from distributional_G_Optimal import Distributional_G_optimal
 
 class MNLOracle():
     
@@ -56,14 +56,7 @@ class MNLEnv():
         self.arms = arms
         self.ctr = 0
 
-        np.random.seed(self.seed)
+        self.g_distributional_design = Distributional_G_optimal()
 
-    def find_optimal_design(self):
-        '''
-        find the optimal design for the given instance
-        '''
-        if self.optimal_design_alg == "barycentric_spanner":
-            self.spanning_set = BarycentricSpanner(self.params , self.arms , self.bs_constant)
-            print("Spanning Set : " , self.spanning_set.spanning_set)
-        else:
-            assert False , "Optimal Design Algorithm not implemented"
+        np.random.seed(self.seed)
+        

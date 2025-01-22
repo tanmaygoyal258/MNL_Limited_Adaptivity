@@ -4,7 +4,6 @@ class BarycentricSpanner():
 
     def __init__(self , params , arms ,  C):
 
-        # TODO: implement constructor for params
         self.arms = arms
         self.dim = params["dim_arms"]
 
@@ -43,12 +42,15 @@ class BarycentricSpanner():
             if current_dim == self.dim:
                 break
 
+        # since each column corresponds to an arm, we revert back to the setting where each row is an arm
+        self.spanning_set = self.spanning_set.T
+
     def verify_spanner(self):
         '''
         verifies the coefficients of the linear combination of spanning set are in [-C,C]
         '''
         print(f"Verifying the Barycentric Spanner...")
         for arm in self.arms:
-            soln = np.linalg.solve(self.spanning_set, arm)
+            soln = np.linalg.solve(self.spanning_set.T, arm)
             assert soln.all() >= -self.C and soln.all() <= self.C , f"Barycentric Spanner failed for arm {arm}"
         print(f"Barycentric Spanner has been verified")
