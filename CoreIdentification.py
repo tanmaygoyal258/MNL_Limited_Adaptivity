@@ -1,9 +1,8 @@
 import numpy as np
 from utils import information_matrix_set , weighted_norm
-from G_Optimal import g_optimal_design
+from utils import g_optimal_design
 
 class CoreIdentification():
-
     def __init__(self , lamda , c , multiset , dim):
         self.lamda = lamda
         self.c = c

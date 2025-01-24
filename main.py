@@ -17,6 +17,7 @@ def parse_args():
     parser.add_argument('--reward_vec', type = str, default = "random", help = 'file containing reward_vec')
     parser.add_argument('--normalize_thetastar', action = 'store_true')
     parser.add_argument('--horizon', type = int, default = '10000', help = 'time horizon')
+    parser.add_argument('--num_batches' , type = int , help = "number of batches")
     parser.add_argument('--failure_level', type = float, default = 0.05, help = 'delta')
     parser.add_argument('--barycentric_spanner_constant' , type = float , default = 2 , help = 'constant for the barycentric spanner')
     return parser.parse_args()
@@ -40,6 +41,8 @@ if __name__ ==  "__main__":
     params["horizon"] = args.horizon
     params["failure_level"] = args.failure_level
     params["BS_constant"] = args.barycentric_spanner_constant
+    params["num_batches"] = args.num_batches
+    params["num_outcomes"] = args.num_outcomes
 
     # generate theta_star
     if args.theta_star != "random" and "npy" in args.theta_star:
@@ -55,27 +58,43 @@ if __name__ ==  "__main__":
     # generate reward_vec : ensure first element is zero to correspond to no action chosen
     if args.reward_vec != "random" and "npy" in args.reward_vec:
         reward_vec = np.load(args.reward_vec)
-        if np.shape(reward_vec)[0] == args.num_outcomes:
-            reward_vec = np.hstack([[0] , reward_vec])
-        elif np.shape(reward_vec)[0] == args.num_outcomes + 1:
-            assert reward_vec[0] == 0 , "First element of reward vec should be zero to correspond to no action chosen, either remove that element or ensure it is zero"
-        else: 
-            assert False , "Reward vec should have either num_outcomes or num_outcomes + 1 elements"
+        assert len(reward_vec) == args.num_outcomes , "Reward vec should have either num_outcomes elements"
     elif args.reward_vec == "random":
         reward_vec = np.array([np.random.random() for i in range(args.num_outcomes)])
-        reward_vec = np.hstack([[0] , reward_vec])
+    else:
+        assert False , "Incorrect choice for Reward Vector"
     params["reward_vec"] = reward_vec.tolist()
     params["reward_vec_norm_ub"] = int(np.linalg.norm(reward_vec)) + 1
 
-
     print(params)
-
+    
     # generate the arms for the instance
-    arms = [[np.random.random()*2-1 for i in range(args.dim_arms)] for j in range(args.num_arms)]
-    arms = [arm/np.linalg.norm(arm) for arm in arms]
+    all_arms = []
+    for t in range(args.horizon):
+        arms = [[np.random.random()*2-1 for i in range(args.dim_arms)] for j in range(args.num_arms)]
+        arms = [arm/np.linalg.norm(arm) for arm in arms]
+        all_arms.append(arms)
+
+    # check validity of the data path
+    data_path = f"Results_B_MNL"
+    if not os.path.exists(data_path):
+            os.makedirs(data_path)
+    data_path_log = data_path + "/logs"
+    if not os.path.exists(data_path_log):
+        os.makedirs(data_path_log)
+    data_path_with_details = f"{data_path_log}/T={args.horizon}_K={args.num_outcomes}_d={args.dim_arms}_N={args.num_arms}_seed={args.seed}"
+    if not os.path.exists(data_path_with_details):
+        os.makedirs(data_path_with_details)
+    params["data_path"] = data_path_with_details
+
+    # dump the json
+    with open(data_path_with_details + "/params.json", "w") as outfile:
+        json.dump(params, outfile)
 
     # initialize the environment
-    env = MNLEnv(params , arms , theta_star , reward_vec)
-    MNLEnv.find_optimal_design(env)
-
+    env = MNLEnv(params , all_arms , theta_star , reward_vec)
+    
+    # obtain the regret array and save it
+    regret_arr = env.regret_arr
+    np.save(data_path_with_details + "/regret.npy", regret_arr)
 
