@@ -34,46 +34,45 @@ class B_MNL():
     def play_algorithm(self):
         for batch_num in range(len(self.batch_endpoints)-1):
             print(f"Playing batch {batch_num}")
-            batch_X , batch_rewards , batch_played_arms , batch_outcomes = self.play_batch(batch_num)
+            theta_update_indices , policy_update_indices = self.divide_indices(batch_num)
+
+            batch_X , batch_rewards , batch_played_arms , batch_outcomes = self.play_batch(batch_num , theta_update_indices , policy_update_indices)
             
             if self.batch_endpoints[batch_num+1] == self.horizon:
                 assert len(self.regret_arr) == self.horizon , f"Length of regret array is {len(self.regret_arr)}"
                 return self.regret_arr
-            
-            theta_update_indices , policy_update_indices = self.divide_indices(batch_num)
-
-            required_rewards = [batch_rewards[i] for i in theta_update_indices]
-            required_arms = [batch_played_arms[i] for i in theta_update_indices]
-            required_outcomes = [batch_outcomes[i] for i in theta_update_indices]
-            required_X = [batch_X[i] for i in policy_update_indices]
 
             print(f"Updating batch parameters")
 
-            self.update_theta_and_H(required_arms , required_rewards , required_outcomes , batch_num)
-            self.g_distributional_design.update_parameters(1/self.horizon , self.num_outcomes , required_X , self.dim_arms , self.theta_estimates[-1] , self.self_concordance_factor)
+            self.update_theta_and_H(batch_played_arms , batch_rewards , batch_outcomes , batch_num)
+            self.g_distributional_design.update_parameters(1/self.horizon , self.num_outcomes , batch_X , self.dim_arms , self.theta_estimates[-1] , self.self_concordance_factor)
 
     
-    def play_batch(self , batch_num):
+    def play_batch(self , batch_num , theta_update_indices , policy_update_indices):
         batch_indices = [_ for _ in range(self.batch_endpoints[batch_num] , self.batch_endpoints[batch_num+1])]
         batch_X = []
         batch_rewards = []
         batch_played_actions = []
         batch_outcomes = []
 
-        for t in tqdm(batch_indices):
+        for t in tqdm(range(len(batch_indices))):
             arms = self.arms[t]
             
             updated_arm_set = arms
             for j in range(batch_num):
                 updated_arm_set = self.UCB_LCB_update(arms , j)
-            batch_X.append(updated_arm_set)    
+            
+            if t in policy_update_indices:
+                batch_X.append(updated_arm_set)    
+            
             played_arm = self.g_distributional_design.sample_G_optimal(updated_arm_set) if batch_num == 0 \
                         else self.g_distributional_design.sample_MNL_policy(updated_arm_set , self.num_outcomes , self.theta_estimates[-1] , self.self_concordance_factor)
             outcome , reward = self.oracle.pull(played_arm)
-
-            batch_outcomes.append(outcome)
-            batch_rewards.append(reward)
-            batch_played_actions.append(played_arm)
+            
+            if t in theta_update_indices:
+                batch_outcomes.append(outcome)
+                batch_rewards.append(reward)
+                batch_played_actions.append(played_arm)
 
             best_arm , best_arm_reward = self.find_best_arm_reward(arms)
             self.regret_arr.append(best_arm_reward - self.oracle.expected_reward(played_arm))
