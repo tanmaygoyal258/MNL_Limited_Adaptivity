@@ -7,6 +7,7 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--alg_name' , type = str , default = "B_MNL" , help = "algorithm to run, choose from [B_MNL , BatchLinUCB]")
     parser.add_argument('--horizon', type = int, default = '10000', help = 'time horizon')
     parser.add_argument('--num_outcomes', type = int, default = 5, help = 'number of outcomes')
     parser.add_argument('--num_arms', type = int, default = 4, help = 'number of arms')
@@ -20,16 +21,18 @@ if __name__ == "__main__":
     
     # read the arguments
     args = parse_args()
+    if args.alg_name == "BatchLinUCB":
+        args.num_outcomes = 1
 
     # check for all the files that exist and store corresponding regret and time arrays
     regret_arrays = []
-    folder_name = f"Results_B_MNL/logs"
+    folder_name = f"Results_{args.alg_name}/logs"
     suffix = f"/T={args.horizon}_K={args.num_outcomes}_d={args.dim_arms}_N={args.num_arms}_seed={args.seed}"
     
     regret_arrays.append(np.load(folder_name + suffix + "/regret.npy"))
 
     # plot the regret
-    plt.plot(regret_arrays[0].cumsum() , '-' , label = 'B_MNL')
+    plt.plot(regret_arrays[0].cumsum() , '-' , label = args.alg_name)
     plt.title(f"Cumulative Regret for T = {args.horizon}, K = {args.num_outcomes}, d = {args.dim_arms}, and N = {args.num_arms}")
     plt.grid()
     plt.xlabel("Number of Rounds")

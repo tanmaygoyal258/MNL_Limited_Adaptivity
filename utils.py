@@ -28,7 +28,11 @@ def g_optimal_design(X , algorithm = "d_optimal" , BS = None):
     '''
     returns the g optimal design for a given set of points
     '''
-    dim = len(X[0])
+    try:
+        dim = len(X[0])
+    except:
+        print(X)
+        return None
     if algorithm == "barycentric_spanner":
         assert BS is not None
         spanning_set =  BarycentricSpanner(dim , X , BS).spanning_set

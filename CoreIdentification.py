@@ -10,6 +10,7 @@ class CoreIdentification():
         self.dim = dim
 
         self.current_set = multiset
+
         self.gamma = len(self.multiset)
 
     def findCoreSet(self):

@@ -1,5 +1,5 @@
 import numpy as np
-from distributional_G_Optimal import Distributional_G_optimal
+from distributional_G_Optimal_MNL import Distributional_G_optimal
 from B_MNL import B_MNL
 
 class MNLOracle():
