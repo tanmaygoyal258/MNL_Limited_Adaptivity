@@ -38,5 +38,5 @@ class CoreIdentification():
         avg_design_matrix = np.identity(self.dim) * self.lamda
         for X in self.current_set:
             g_opt_design = g_optimal_design(X)
-            avg_design_matrix += 1/self.gamma * information_matrix_set(X , g_opt_design)
+            avg_design_matrix += 1/self.gamma * information_matrix_set(g_opt_design , X)
         return avg_design_matrix

@@ -8,7 +8,9 @@ class D_Optimal():
         self.dim = dim
 
         self.spanning_set= self.arms.copy()
-        self.weights = [1/len(arms) for _ in range(len(arms))]
+        self.weights = [np.random.random()for _ in range(len(arms))]
+        self.weights /= np.sum(self.weights)
+        self.weights = self.weights.tolist()
 
         self.gamma = gamma
         self.delta = delta
@@ -23,7 +25,7 @@ class D_Optimal():
         while len(self.spanning_set) > self.dim:
             current_weights = self.weights
             while True:
-                D = np.linalg.inv(information_matrix_set(self.spanning_set , current_weights))
+                D = np.linalg.inv(information_matrix_set(current_weights , self.spanning_set ))
                 new_weights = [w/self.dim * weighted_norm(arm , D)**2 for w,arm in zip(current_weights , self.spanning_set)]
                 error = np.sum(np.abs(np.sum(new_weights.copy()) - np.sum(current_weights.copy())))
                 if error < self.gamma:
@@ -53,5 +55,7 @@ class D_Optimal():
             if tuple(arm) in self.spanning_set_tuple:
                 i = self.spanning_set_tuple.index(tuple(arm))
                 distribution[idx] = self.weights[i]
+
+        distribution = (distribution/np.sum(distribution)).tolist()
 
         return distribution

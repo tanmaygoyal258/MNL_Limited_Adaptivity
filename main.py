@@ -5,6 +5,7 @@ import json
 import argparse
 from datetime import datetime
 from MNLEnv import MNLEnv
+from MNLEnv_Batched import MNLEnv_Batched
 from LinearEnv import LinearEnv
 
 def parse_args():
@@ -12,6 +13,7 @@ def parse_args():
     parser.add_argument('--alg_name' , type = str , default = "B_MNL" , help = "algorithm to run, choose from [B_MNL , BatchLinUCB]")
     parser.add_argument('--num_arms' , type = int , default = 10 , help = "number of arms")
     parser.add_argument('--dim_arms' , type = int , default = 5 , help = "dimensions of the arm")
+    parser.add_argument('--num_contexts' , type = int , default = None, help = "number of finite contexts. None denotes infinite contexts")
     parser.add_argument('--num_outcomes' , type = int , default = 2 , help = "number of outcomes")
     parser.add_argument('--optimal_design_alg' , type = str , default = "barycentric_spanner" , help = "algorithm to use for optimal design")
     parser.add_argument('--seed', type = int, default = 123, help = 'random seed')
@@ -32,7 +34,7 @@ if __name__ ==  "__main__":
     args = parse_args()
 
     # check alg_name
-    assert args.alg_name in ["B_MNL" , "BatchLinUCB"]
+    assert args.alg_name in ["B_MNL" , "BatchLinUCB" , "MLogB"]
     if args.alg_name == "BatchLinUCB":
         args.num_outcomes = 1
 
@@ -51,6 +53,7 @@ if __name__ ==  "__main__":
     params["BS_constant"] = args.barycentric_spanner_constant
     params["num_batches"] = args.num_batches
     params["num_outcomes"] = args.num_outcomes
+    params["num_contexts"] = args.num_contexts
 
     # generate theta_star
     if args.theta_star != "random" and "npy" in args.theta_star:
@@ -80,11 +83,16 @@ if __name__ ==  "__main__":
     print(params)
     
     # generate the arms for the instance
+    num_contexts = params["horizon"] if params["num_contexts"] is None else params["num_contexts"]
     all_arms = []
-    for t in range(args.horizon):
-        arms = [[np.random.random()*2-1 for i in range(args.dim_arms)] for j in range(args.num_arms)]
+    for c in range(num_contexts):
+        # arms = np.identity(args.dim_arms , dtype = np.float64).tolist()
+        arms = []
+        for _ in range(args.num_arms):
+            arms.append([np.random.random()*2-1 for i in range(args.dim_arms)])
         arms = [arm/np.linalg.norm(arm) for arm in arms]
         all_arms.append(arms)
+
 
     # check validity of the data path
     data_path = f"Results_{args.alg_name}"
@@ -93,7 +101,7 @@ if __name__ ==  "__main__":
     data_path_log = data_path + "/logs"
     if not os.path.exists(data_path_log):
         os.makedirs(data_path_log)
-    data_path_with_details = f"{data_path_log}/T={args.horizon}_K={args.num_outcomes}_d={args.dim_arms}_N={args.num_arms}_seed={args.seed}"
+    data_path_with_details = f"{data_path_log}/T={args.horizon}_K={args.num_outcomes}_d={args.dim_arms}_N={args.num_arms}_seed={args.seed}_contexts={args.num_contexts}"
     if not os.path.exists(data_path_with_details):
         os.makedirs(data_path_with_details)
     params["data_path"] = data_path_with_details
@@ -104,6 +112,8 @@ if __name__ ==  "__main__":
 
     # initialize the environment
     if args.alg_name == "B_MNL":
+        env = MNLEnv_Batched(params , all_arms , theta_star , reward_vec)
+    elif args.alg_name == "MLogB":
         env = MNLEnv(params , all_arms , theta_star , reward_vec)
     else:
         env = LinearEnv(params , all_arms, theta_star)

@@ -48,7 +48,7 @@ class Distributional_G_optimal():
         U = lamda * N * gamma * np.identity(d)
         for X in multiset:
             g_opt_design = g_optimal_design(X , algorithm = self.opt_design_alg , BS = self.BS_constant)
-            U += N/2 * information_matrix_set(X , g_opt_design)
+            U += N/2 * information_matrix_set(g_opt_design , X)
 
         n = 1
         tau_lengths = []

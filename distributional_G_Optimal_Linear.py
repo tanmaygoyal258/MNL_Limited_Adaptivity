@@ -1,7 +1,7 @@
 import numpy as np
 from tqdm import tqdm
 from CoreIdentification import CoreIdentification
-from utils import g_optimal_design , information_matrix_set , sample_softmax
+from utils import g_optimal_design , information_matrix_set , sample_softmax , weighted_norm 
 from scipy.linalg import sqrtm
 
 class Distributional_G_optimal():
@@ -29,20 +29,27 @@ class Distributional_G_optimal():
         gamma = len(multiset)
 
         U = lamda * N * gamma * np.identity(d)
-        for X in multiset:
+        print("*"*100)
+        print(lamda , N , gamma , np.linalg.det(U))
+        for _ , X in enumerate(multiset):
             g_opt_design = g_optimal_design(X , algorithm = self.opt_design_alg , BS = self.BS_constant)
-            U += N/2 * information_matrix_set(X , g_opt_design)
+            print(information_matrix_set(g_opt_design , X) , np.linalg.det(N/2*information_matrix_set(g_opt_design , X)))
+            U += N/2 * information_matrix_set(g_opt_design , X)
+            print(np.linalg.det(U))
 
         n = 1
         tau_lengths = []
         W_collection = []
         current_tau = []
         current_W = U.copy()
+        print("Starting U det is " , np.linalg.det(current_W))
 
         for t in tqdm(range(int(N) * gamma)):
             current_tau.append(t)
-            x = sample_softmax(multiset[int(t%gamma)] , np.linalg.inv(current_W) , np.log(len(multiset[int(t%gamma)] )))
+            x = sample_softmax(multiset[int(t%gamma)] , np.linalg.inv(current_W) , np.log(len(multiset[int(t%gamma)] )))[0][2]
+            print("Trace ", np.trace(np.outer(x,x)))
             U += np.outer(x , x)
+            print(np.linalg.det(U) , np.linalg.det(current_W))
             if np.linalg.det(U) > 2 * np.linalg.det(current_W):
                 n += 1
                 tau_lengths.append(len(current_tau))
@@ -74,15 +81,19 @@ class Distributional_G_optimal():
         else samples from ith mixed softmax policy
         '''
         if np.random.choice([0,1]) == 0:
-            return self.sample_G_optimal(X)
+            return "G_optimal" , self.sample_G_optimal(X)
         else:
             index = np.random.choice(len(self.p_array) , p = self.p_array)
-            return sample_softmax(X , self.matrices[index] , np.log(len(X)))
+            return "softmax" ,  sample_softmax(X , self.matrices[index] , np.log(len(X)))
         
     def sample_G_optimal(self ,  X):
         '''
         samples an arm from the G optimal design
         '''
         g_opt_design = g_optimal_design(X , algorithm = self.opt_design_alg , BS = self.BS_constant)
-        return X[np.random.choice(len(X) , p = g_opt_design)]
-    
+        g_opt_design /= np.sum(g_opt_design)
+        # information_matrix = information_matrix_set(g_opt_design , X)
+        # print([weighted_norm(a , np.linalg.inv(information_matrix)) for a in X])
+        arm_index = np.random.choice(len(X) , p = g_opt_design)
+        return g_opt_design , arm_index , X[arm_index]
+        

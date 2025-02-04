@@ -14,6 +14,7 @@ class B_MNL():
         self.num_outcomes = params["num_outcomes"]
         self.reward_vec = params["reward_vec"]
         self.failure_level = params["failure_level"]
+        self.num_contexts = params["num_contexts"]
 
         self.oracle = oracle
         self.g_distributional_design = g_distributional_design
@@ -56,7 +57,7 @@ class B_MNL():
         batch_outcomes = []
 
         for t in tqdm(range(len(batch_indices))):
-            arms = self.arms[t]
+            arms = self.arms[t] if self.num_contexts is None else self.arms[np.random.choice(self.num_contexts)]
             
             updated_arm_set = arms
             for j in range(batch_num):
@@ -136,7 +137,7 @@ class B_MNL():
     
     def find_best_arm_reward(self , arm_set):
         '''
-        finds the best arm with best exoected rewards
+        finds the best arm with best expected rewards
         '''
         arm_rewards = [self.oracle.expected_reward(arm) for arm in arm_set]
         best_arm_index = np.argmax(arm_rewards)

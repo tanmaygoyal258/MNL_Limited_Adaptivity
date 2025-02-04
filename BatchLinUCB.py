@@ -11,6 +11,7 @@ class BatchLinUCB():
 
         self.num_arms = params["num_arms"]
         self.dim_arms = params["dim_arms"]
+        self.num_contexts = params["num_contexts"]
         self.param_norm_ub = params["param_norm_ub"]
         self.failure_level = params["failure_level"]
 
@@ -26,6 +27,7 @@ class BatchLinUCB():
         self.regret_arr = []
 
         self.alpha = 10 * np.sqrt(np.log(2 * self.dim_arms * self.num_arms * self.horizon / self.failure_level))
+        self.outfile = open(params["data_path"] + "/outfile.txt" , "w")
 
     def play_algorithm(self):
         for batch_num in range(len(self.batch_endpoints)-1):
@@ -37,7 +39,7 @@ class BatchLinUCB():
             if self.batch_endpoints[batch_num+1] == self.horizon:
                 assert len(self.regret_arr) == self.horizon , f"Length of regret array is {len(self.regret_arr)}"
                 return self.regret_arr
-
+            
             print(f"Updating batch parameters")
 
             self.update_theta_and_Lambda(batch_played_arms , batch_rewards , batch_num)
@@ -56,7 +58,7 @@ class BatchLinUCB():
         batch_played_actions = []
 
         for t in tqdm(range(len(batch_indices))):
-            arms = self.arms[t]
+            arms = self.arms[t] if self.num_contexts is None else self.arms[np.random.choice(self.num_contexts)]
             
             updated_arm_set = arms
             for j in range(batch_num):
@@ -65,16 +67,22 @@ class BatchLinUCB():
             if t in policy_update_indices:
                 batch_X.append(updated_arm_set)    
             
-            played_arm = self.g_distributional_design.sample_G_optimal(updated_arm_set) if batch_num == 0 \
-                        else self.g_distributional_design.sample_mixed_softmax(updated_arm_set)
+            result = self.g_distributional_design.sample_G_optimal(updated_arm_set) if batch_num == 0 \
+                                            else self.g_distributional_design.sample_mixed_softmax(updated_arm_set)
             
+            dist_chosen = "g optimal" if batch_num == 0 else result[0]
+            dist = result[0] if batch_num == 0 else result[1][0]
+            arm_index = result[1] if batch_num == 0 else result[1][1]
+            played_arm = result[2] if batch_num == 0 else result[1][2]  
+
             reward = self.oracle.pull(played_arm)
             
             if t in theta_update_indices:
                 batch_rewards.append(reward)
                 batch_played_actions.append(played_arm)
 
-            best_arm , best_arm_reward = self.find_best_arm_reward(arms)
+            best_arm_index , best_arm , best_arm_reward = self.find_best_arm_reward(arms)
+            self.outfile.write(f"best arm index  = {best_arm_index} , Best Arm = {best_arm} , dist_chosen = {dist_chosen} , dist = {dist} , arm_index = {arm_index}, arm_chosen = {played_arm}\n\n")
             self.regret_arr.append(best_arm_reward - self.oracle.expected_reward(played_arm))
 
         return batch_X , batch_rewards , batch_played_actions
@@ -133,8 +141,8 @@ class BatchLinUCB():
 
     def find_best_arm_reward(self , arm_set):
         '''
-        finds the best arm with best exoected rewards
+        finds the best arm with best expected rewards
         '''
         arm_rewards = [self.oracle.expected_reward(arm) for arm in arm_set]
         best_arm_index = np.argmax(arm_rewards)
-        return arm_set[best_arm_index] , arm_rewards[best_arm_index]
+        return best_arm_index , arm_set[best_arm_index] , arm_rewards[best_arm_index]

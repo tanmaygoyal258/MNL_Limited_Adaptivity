@@ -37,7 +37,7 @@ class MNLOracle():
         else:
             return 0 , 0
         
-class MNLEnv():
+class MNLEnv_Batched():
     def __init__(self , params , arms , theta_star , reward_vec):
         
         self.seed = params["seed"]
@@ -45,10 +45,14 @@ class MNLEnv():
         self.oracle = MNLOracle(theta_star , reward_vec)
 
         self.horizon = params["horizon"]
+        self.num_batches = params["num_batches"]
         self.dim_arms = params["dim_arms"]
         self.param_norm_ub = params["param_norm_ub"]
         self.reward_vec_norm_ub = params["reward_vec_norm_ub"]
-    
+        
+        self.optimal_design_alg = params["optimal_design_alg"]
+        self.bs_constant = params["BS_constant"]
+
         # self.regret_arr = np.empty(self.horizon)
         # self.reward_arr = np.empty(self.horizon)
         # self.update_time_arr = np.empty(self.horizon)
@@ -57,9 +61,29 @@ class MNLEnv():
         
         self.arms = arms
 
+        self.g_distributional_design = Distributional_G_optimal(self.optimal_design_alg , self.bs_constant)
+        self.batch_endpoints = self.get_batch_endpoints()
+
         # create an instance of the algorithm    
         if params["alg_name"] == "B_MNL": 
             self.algorithm = B_MNL(params , self.oracle , self.arms , self.batch_endpoints , self.g_distributional_design)
-        elif params["alg_name"] == "MLogB":
-            self.algorithm = MLogB(params , self.oracle , self.arms)
         self.regret_arr = self.algorithm.play_algorithm()
+        
+
+    def get_batch_endpoints(self):
+        '''
+        returns the lengths of each batch
+        '''
+        log_log_T = np.log(np.log(self.horizon))
+        M = self.num_batches
+        alpha = self.horizon ** (2**(M-1)/(2**M - 2)) if M <= log_log_T else 2*np.sqrt(self.horizon)
+
+        batch_lengths = [int(alpha)]
+        while (np.sum(batch_lengths.copy()) < self.horizon):
+            batch_lengths.append(int(alpha * np.sqrt(batch_lengths[-1])))
+        
+        batch_endpoints = np.cumsum(batch_lengths)
+        batch_endpoints = np.hstack([[0] , batch_endpoints])
+        batch_endpoints = np.clip(batch_endpoints , 0 , self.horizon)
+        assert batch_endpoints[-1] == self.horizon
+        return batch_endpoints
