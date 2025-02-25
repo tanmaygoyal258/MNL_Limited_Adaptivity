@@ -1,42 +1,57 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 import json
 import argparse
-from datetime import datetime
 from MNLEnv import MNLEnv
-from MNLEnv_Batched import MNLEnv_Batched
-from LinearEnv import LinearEnv
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--alg_name' , type = str , default = "B_MNL" , help = "algorithm to run, choose from [B_MNL , BatchLinUCB]")
-    parser.add_argument('--num_arms' , type = int , default = 10 , help = "number of arms")
-    parser.add_argument('--dim_arms' , type = int , default = 5 , help = "dimensions of the arm")
-    parser.add_argument('--num_contexts' , type = int , default = None, help = "number of finite contexts. None denotes infinite contexts")
-    parser.add_argument('--num_outcomes' , type = int , default = 2 , help = "number of outcomes")
-    parser.add_argument('--optimal_design_alg' , type = str , default = "barycentric_spanner" , help = "algorithm to use for optimal design")
+    parser.add_argument('--alg_name', type = str)
+    parser.add_argument("--num_contexts" , type = int , default = None , help = "number of contexts: 1 for non-contextual setting and None for infinite context setting")
+    parser.add_argument("--num_outcomes" , type = int , default = 2)
     parser.add_argument('--seed', type = int, default = 123, help = 'random seed')
     parser.add_argument('--theta_star', type = str, default = "random", help = 'file containing optimal parameter')
-    parser.add_argument('--reward_vec', type = str, default = "random", help = 'file containing reward_vec')
-    parser.add_argument('--normalize_thetastar', action = 'store_true')
+    parser.add_argument('--normalize_theta_star', action = "store_true")
+    parser.add_argument('--reward_vec', type = str, default = "random", help = 'file containing optimal parameter')
     parser.add_argument('--horizon', type = int, default = '10000', help = 'time horizon')
-    parser.add_argument('--num_batches' , type = int , help = "number of batches")
     parser.add_argument('--failure_level', type = float, default = 0.05, help = 'delta')
-    parser.add_argument('--barycentric_spanner_constant' , type = float , default = 2 , help = 'constant for the barycentric spanner')
+    parser.add_argument('--dim_arms', type = int, default = 5, help = 'arm dimensions')
+    parser.add_argument('--num_arms', type = int, default = 4, help = 'number of items per slot')
     return parser.parse_args()
 
+def generate_slot_arms(params):
+    num_contexts = params["horizon"] if params["num_contexts"] is None else params["num_contexts"]
+    all_arms = []
+    for c in range(num_contexts):
+        context_arms = []
+        for _ in range(args.num_arms):
+            context_arms.append([np.random.random()*2-1 for i in range(args.dim_arms)])
+            context_arms = [(arm/np.linalg.norm(arm)).reshape(-1,1) for arm in context_arms]
+        all_arms.append(context_arms)
+    return all_arms
 
     
+def generate_theta_star(args):
+    # generate theta_star
+    if args.theta_star != "random" and "npy" in args.theta_star:
+        theta_star = np.load(args.theta_star)
+        assert len(theta_star) == args.dim_arms * args.num_outcomes
+    elif args.theta_star == "random":
+        theta_star = np.array([np.random.random()*2-1 for i in range(args.dim_arms * args.num_outcomes)])
+        if args.normalize_theta_star:
+            theta_star /= np.linalg.norm(theta_star)
+            # theta_star *= 3
+    return theta_star
+
+def generate_reward_vec(args):
+    return [np.random.random() for _ in range(args.num_outcomes)]
+
 if __name__ ==  "__main__":
+
 
     # read the arguments
     args = parse_args()
-
-    # check alg_name
-    assert args.alg_name in ["B_MNL" , "BatchLinUCB" , "MLogB"]
-    if args.alg_name == "BatchLinUCB":
-        args.num_outcomes = 1
 
     # set the seed before any randomization occurs
     np.random.seed(args.seed)
@@ -44,81 +59,78 @@ if __name__ ==  "__main__":
     # create the params dictionary
     params = {}
     params["alg_name"] = args.alg_name
-    params["num_arms"] = args.num_arms
-    params["dim_arms"] = args.dim_arms
-    params["optimal_design_alg"] = args.optimal_design_alg
-    params["seed"] = args.seed
+    params["num_contexts"] = args.horizon if args.num_contexts is None else args.num_contexts
     params["horizon"] = args.horizon
     params["failure_level"] = args.failure_level
-    params["BS_constant"] = args.barycentric_spanner_constant
-    params["num_batches"] = args.num_batches
+    params["dim_arms"] = args.dim_arms
+    params["num_arms"] = args.num_arms
+    params["seed"] = args.seed
     params["num_outcomes"] = args.num_outcomes
-    params["num_contexts"] = args.num_contexts
 
-    # generate theta_star
-    if args.theta_star != "random" and "npy" in args.theta_star:
-        theta_star = np.load(args.theta_star)
-        assert len(theta_star) == args.dim_arms * params["num_outcomes"]
-    elif args.theta_star == "random":
-        theta_star = np.array([np.random.random()*2-1 for i in range(args.dim_arms * params["num_outcomes"])])
-        if args.normalize_thetastar:
-            theta_star /= np.linalg.norm(theta_star)
-        params["thetastar"] = theta_star.tolist()
-        params["param_norm_ub"] = int(np.linalg.norm(theta_star)) + 1
-
-    # generate reward_vec : ensure first element is zero to correspond to no action chosen
-    if args.alg_name == "BatchLinUCB":
-        reward_vec = None
-    else:
-        if args.reward_vec != "random" and "npy" in args.reward_vec:
-            reward_vec = np.load(args.reward_vec)
-            assert len(reward_vec) == args.num_outcomes , "Reward vec should have either num_outcomes elements"
-        elif args.reward_vec == "random":
-            reward_vec = np.array([np.random.random() for i in range(args.num_outcomes)])
-        else:
-            assert False , "Incorrect choice for Reward Vector"
-        params["reward_vec"] = reward_vec.tolist()
-        params["reward_vec_norm_ub"] = int(np.linalg.norm(reward_vec)) + 1
+    theta_star = generate_theta_star(args)
+    params["thetastar"] = theta_star.tolist()
+    params["param_norm_ub"] = int(np.linalg.norm(theta_star)) + 1
+    
+    reward_vec = generate_reward_vec(args)
+    params["reward_vec"] = reward_vec
+    params["reward_vec_norm_ub"] = int(np.linalg.norm(reward_vec))+1
 
     print(params)
+
+    # generate the arms for each slot
+    slot_arms = generate_slot_arms(params)
     
-    # generate the arms for the instance
-    num_contexts = params["horizon"] if params["num_contexts"] is None else params["num_contexts"]
-    all_arms = []
-    for c in range(num_contexts):
-        # arms = np.identity(args.dim_arms , dtype = np.float64).tolist()
-        arms = []
-        for _ in range(args.num_arms):
-            arms.append([np.random.random()*2-1 for i in range(args.dim_arms)])
-        arms = [arm/np.linalg.norm(arm) for arm in arms]
-        all_arms.append(arms)
-
-
     # check validity of the data path
-    data_path = f"Results_{args.alg_name}"
+    data_path = f"Results"
     if not os.path.exists(data_path):
             os.makedirs(data_path)
-    data_path_log = data_path + "/logs"
-    if not os.path.exists(data_path_log):
-        os.makedirs(data_path_log)
-    data_path_with_details = f"{data_path_log}/T={args.horizon}_K={args.num_outcomes}_d={args.dim_arms}_N={args.num_arms}_seed={args.seed}_contexts={args.num_contexts}"
+    data_path_with_alg = f"{data_path}/{args.alg_name}" if args.alg_name in ["rs_mnl" , "mlogb"] else data_path
+    if not os.path.exists(data_path_with_alg):
+        os.makedirs(data_path_with_alg)
+    suffix = f"contexts={args.num_contexts}_N={args.num_arms}_K={args.num_outcomes}_T={args.horizon}_seed={args.seed}" if args.alg_name in ["rs_mnl" , "mlogb"] else \
+        f"{args.alg_name}_contexts={args.num_contexts}_N={args.num_arms}_K={args.num_outcomes}_T={args.horizon}_seed={args.seed}"
+    data_path_with_details = f"{data_path_with_alg}/{suffix}"
     if not os.path.exists(data_path_with_details):
         os.makedirs(data_path_with_details)
     params["data_path"] = data_path_with_details
 
-    # dump the json
+    # dump the json file with the params
     with open(data_path_with_details + "/params.json", "w") as outfile:
         json.dump(params, outfile)
 
-    # initialize the environment
-    if args.alg_name == "B_MNL":
-        env = MNLEnv_Batched(params , all_arms , theta_star , reward_vec)
-    elif args.alg_name == "MLogB":
-        env = MNLEnv(params , all_arms , theta_star , reward_vec)
-    else:
-        env = LinearEnv(params , all_arms, theta_star)
-    
-    # obtain the regret array and save it
+    # set the environment
+    if args.alg_name in ["rs_glincb" , "rs_mnl" , "mlogb" , "ada_ofu_ecolog" , "ofulogplus"]:
+        env = MNLEnv(params , slot_arms , theta_star, reward_vec)
+    # else set the batched algorithm: TODO
+
+    # obtain the regret, reward, and time arrays, and save them
     regret_arr = env.regret_arr
     np.save(data_path_with_details + "/regret.npy", regret_arr)
-
+    time_arr = env.time_arr
+    try:
+        switches_arr = env.switch_arr
+        np.save(data_path_with_details + "/switches.npy", switches_arr)
+    except:
+        pass
+    try:
+        np.save(data_path_with_details + "/time.npy" , time_arr)
+    except:
+        # different sizes batches have different arrays
+        new_time_arr = []
+        batch_lengths = []
+        for batch in time_arr:
+            batch_lengths.append(len(batch))
+            new_time_arr += batch
+        np.save(data_path_with_details + "/time.npy" , new_time_arr)
+        np.save(data_path_with_details + "/batch_lengths.npy" , batch_lengths)
+        
+    try:
+        reward_arr = env.reward_arr
+        np.save(data_path_with_details + "/reward.npy", reward_arr)
+        pull_time_arr = env.pull_time_arr
+        update_time_arr = env.update_time_arr
+        np.save(data_path_with_details + "/pull_time.npy" , pull_time_arr)
+        np.save(data_path_with_details + "/update_time.npy" , update_time_arr)
+    except: 
+        # the time and reward arrays were not instantiated for the algorithms
+        pass

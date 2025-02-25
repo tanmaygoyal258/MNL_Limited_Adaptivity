@@ -1,6 +1,6 @@
 import numpy as np
-from barycentric_spanner import BarycentricSpanner
 from scipy.optimize import minimize , LinearConstraint
+from scipy.stats import norm
 
 def information_matrix_set(distribution_X , X):
     '''
@@ -71,31 +71,40 @@ def sample_softmax(X , M , alpha):
     arm_index = np.random.choice(len(X) , p = prob_dist_normalized)
     return prob_dist_normalized , arm_index , X[arm_index]
 
-def prob_vector(arm , theta):
+def prob_vector(arm , theta , dim , num_outcomes):
     '''
     returns a softmax probability vector with an additional 1 (=exp(0)) in the denominator to account for no action chosen
     '''
-    theta_temp = np.reshape(theta , (-1 , arm.shape[0]))
-    inner_products = (theta_temp @ arm).reshape(-1,)
+    theta_temp = np.reshape(theta , (dim , num_outcomes))
+    if len(arm.shape) == 1: # no arms in the matrix
+        return None
+    if len(arm.shape) == 3: # multiple arms together
+        arm =  arm.reshape((arm.shape[0] , arm.shape[1]))
+    else: # only one arm at a time
+        arm = arm.reshape(1,dim)
+    inner_products = arm @ theta_temp
+    num_entries = inner_products.shape[0]
     # adding the 0 for no action chosen
-    inner_products = np.hstack([[0] , inner_products])
-    return (np.exp(inner_products) / np.sum(np.exp(inner_products)))[1:]
+    inner_products = np.hstack([np.array([0 for _ in range(num_entries)]).reshape(num_entries , 1) , inner_products])
+    exponent = np.exp(inner_products)
+    sum_exponents_inv = 1/np.sum(exponent , axis = 1).reshape(-1,1)
+    return (sum_exponents_inv * exponent)[: , 1:]
 
-def gradient_MNL(arm , theta):
+def gradient_MNL(arm , theta , dim , num_outcomes):
     '''
     returns the gradient of the probability vector with resepect to an arm and theta
     ''' 
-    z = prob_vector(arm , theta)
+    z = prob_vector(arm , theta , dim , num_outcomes)[0]
     return np.diag(z) - np.outer(z , z)
 
 
-def log_loss(theta , arms , outcomes , lamda):
-    loss = lamda/2 * np.linalg.norm(lamda)**2
-    for arm , outcome in zip(arms , outcomes):
-        if outcome == 0:
-            continue
-        loss -= np.log(prob_vector(arm , theta)[outcome-1])
-    return loss
+def log_loss(theta , arms , outcomes , lamda , dim , num_outcomes):
+    loss = 0
+    probability_vectors = prob_vector(arms , theta  , dim , num_outcomes)
+    outcomes = np.array(outcomes.T)
+    loss = -np.sum(np.log(probability_vectors@outcomes+1e-12)) if probability_vectors is not None else 0
+    # for arm , outcome in zip(arms , outcomes):    #     loss -= np.log(prob_vector(arm , theta , dim , num_outcomes)[outcome-1])
+    return loss + lamda/2 * np.linalg.norm(theta)**2
 
 
 def d_optimal_objective(distribution_X , X):
@@ -104,5 +113,54 @@ def d_optimal_objective(distribution_X , X):
     '''
     return -np.log(np.linalg.det(information_matrix_set(distribution_X , X)) + 1e-12)
 
-def minimize_theta_function(theta , z , H):
-        return weighted_norm(theta - z , H)
+
+def minimize_omd_loss(theta , theta_prev , loss_gradient , eta , H_tilde):
+    return np.dot(loss_gradient , theta) +  1/(2*eta) * weighted_norm(theta - theta_prev , H_tilde)**2
+
+#############################################
+
+def mat_norm(vec, matrix):
+    return np.sqrt(np.dot(vec, np.dot(matrix, vec)))
+
+def sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def dsigmoid(x):
+    return sigmoid(x) * (1.0 - sigmoid(x))
+
+def log_loss_glm(theta, X, Y, lmbda, model):
+    if model == 'Logistic':
+        return - np.sum(Y * np.log(sigmoid(np.dot(X, theta))) + (1 - Y) * np.log(1 - sigmoid(np.dot(X, theta)))) + lmbda * np.sum(np.square(theta))
+    elif model == 'Probit':
+        return - np.sum(Y * np.log(probit(np.dot(X, theta))) + (1 - Y) * np.log(1 - probit(np.dot(X, theta)))) + lmbda * np.sum(np.square(theta))
+
+def grad_log_loss_glm(theta, X, Y, lmbda, model):
+    if model == 'Logistic':
+        return - np.dot(Y, X) + np.dot(sigmoid(np.dot(X, theta)), X) + lmbda * theta
+    elif model == 'Probit':
+        return - np.dot(Y, X) + np.dot(probit(np.dot(X, theta)), X) + lmbda * theta
+
+def hess_log_loss_glm(theta, X, Y, lmbda, model):
+    if model == 'Logistic':
+        return np.sum([dsigmoid(np.dot(theta, x)) * np.outer(x, x) for x in X], axis=0) + lmbda*np.eye(theta.shape[0])
+    elif model == 'Probit':
+        return np.sum([dprobit(np.dot(theta, x)) * np.outer(x, x) for x in X], axis=0) + lmbda*np.eye(theta.shape[0])
+
+def probit(x):
+    return norm.cdf(x)
+
+def dprobit(x):
+    return (1.0 / np.sqrt(2*np.pi)) * np.exp(-x*x/2.0)
+
+def solve_glm_mle(theta_prev, X, Y, lmbda, model):
+    # res = minimize(log_loss_glm, theta_prev,\
+    #                jac=grad_log_loss_glm, hess=hess_log_loss_glm, \
+    #                 args=(X, Y, lmbda, model), method='Newton-CG')
+    res = minimize(log_loss_glm, theta_prev, args=(X, Y, lmbda, model))
+    # if not res.success:
+    #     print(res.message)
+
+    theta_hat, succ_flag = res.x, res.success
+    return theta_hat, succ_flag
+####################################################
