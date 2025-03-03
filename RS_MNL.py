@@ -48,7 +48,6 @@ class RS_MNL:
             self.time_arr.append(self.batch_times.copy())
             self.batch_times = []
             self.hits += 1
-            self.prev_H = self.curr_H.copy()
             
             constraint = [{'type' : "ineq" , "fun": lambda x: self.param_norm_ub**2 - np.dot(x,x)}]
             bounds = [(-self.param_norm_ub , self.param_norm_ub) for _ in range(self.dim_arms*self.num_outcomes)]        
@@ -62,6 +61,11 @@ class RS_MNL:
                 print(minimization_res.message)
                 assert False
                 print("Failed")
+            
+            self.curr_H = self.lmbda * np.eye(self.dim_arms*self.num_outcomes)
+            for arm in self.non_warm_up_X:
+                self.curr_H += np.kron(gradient_MNL(arm , self.theta_hat_tau , self.dim_arms , self.num_outcomes) , np.outer(arm, arm)) / (2 * self.param_norm_ub)
+            self.prev_H = self.curr_H.copy()
                 
         self.switches_arr.append(self.hits)
         # Find max UCB arm
@@ -80,7 +84,7 @@ class RS_MNL:
 
         # Update current H matrix
         # print(np.linalg.det(self.curr_H))
-        self.curr_H += np.kron(gradient_MNL(played_arm , self.theta_hat_tau , self.dim_arms , self.num_outcomes) , np.outer(played_arm, played_arm))
+        self.curr_H += np.kron(gradient_MNL(played_arm , self.theta_hat_tau , self.dim_arms , self.num_outcomes) , np.outer(played_arm, played_arm)) / (2 * self.param_norm_ub)
         # print("Maximum eigenvalue of gradient: ", np.max(np.linalg.eigvals(gradient_MNL(played_arm , self.theta_hat_tau , self.dim_arms , self.num_outcomes))))
         # print(np.linalg.det(self.curr_H))
         self.t += 1

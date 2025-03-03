@@ -3,6 +3,7 @@ import os
 import json
 import argparse
 from MNLEnv import MNLEnv
+from MNLEnv_Batched import MNLEnv_Batched
 
 
 def parse_args():
@@ -102,6 +103,8 @@ if __name__ ==  "__main__":
     if args.alg_name in ["rs_glincb" , "rs_mnl" , "mlogb" , "ada_ofu_ecolog" , "ofulogplus"]:
         env = MNLEnv(params , slot_arms , theta_star, reward_vec)
     # else set the batched algorithm: TODO
+    else:
+        env = MNLEnv_Batched(params , slot_arms , theta_star, reward_vec)
 
     # obtain the regret, reward, and time arrays, and save them
     regret_arr = env.regret_arr
