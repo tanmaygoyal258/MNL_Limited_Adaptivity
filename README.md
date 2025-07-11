@@ -1,4 +1,4 @@
-### This is a README dedicated to MNL_Limited_Adaptivity.
+### This is a README dedicated to the paper Achieving Limited Adaptivity for MNL Bandits.
 
 To run the algorithms, use the following command: 
 
@@ -33,3 +33,5 @@ where the arguments are as follows:
 13. PARAM_NORM_UB: the desired upper bound for the parameter vectors (in case randomly generated, check point 7)
 
 14. REWARD_NORM_UB: the desired upper bound for the reward vector (in case randomly generated, check point 8)
+
+You can follow the instructions in `Reproducible_Experiments.ipynb` to replicate the experiments shown in the paper.
