@@ -1,11 +1,9 @@
 import numpy as np
 from utils import mat_norm, solve_glm_mle, dsigmoid, dprobit
 from tqdm import tqdm
-from time import time
 
 class RS_GLinUCB:
-    def __init__(self, params , arm_set, kappa , oracle):
-        self.arm_set = arm_set
+    def __init__(self, params , kappa, oracle):
         self.oracle = oracle
         
         self.dim_arms = params["dim_arms"]
@@ -14,11 +12,16 @@ class RS_GLinUCB:
         self.horizon = params["horizon"]
         self.delta= params["failure_level"]
         self.kappa = kappa   
-        self.data_path = params["data_path"]
         self.num_contexts = params["num_contexts"]
-        
+        self.number_arms = params["num_arms"]
+
+        # initializing the arm set
+        if self.num_contexts != self.horizon:
+            self.arm_set = self.create_arm_set(np.random.default_rng(params["arm_seed"]))
+        self.arm_rng = np.random.default_rng(params["arm_seed"])
+
         self.model = "Logistic"    
-        self.logistic_constant = 1 # TODO
+        self.logistic_constant = 1 
         
         self.doubling_constant = 0.5
         self.lmbda = 0.5 #self.dim_arms * np.log(self.horizon /self.delta)/self.logistic_constant**2
@@ -39,9 +42,6 @@ class RS_GLinUCB:
         self.e = np.exp(1.0)
         
         self.regret_arr = []
-        self.time_arr = []
-        self.batch_times = []
-        # self.outfile = open(self.data_path + "/outfile.txt" , "w")
 
     def play_arm(self , arms):
         # Check warm up
@@ -65,8 +65,6 @@ class RS_GLinUCB:
         else:
             # Check determinant
             if np.linalg.det(self.curr_H) >= ((1 + self.doubling_constant) * np.linalg.det(self.prev_H)):
-                self.time_arr.append(self.batch_times.copy())
-                self.batch_times = []
                 self.prev_H = self.curr_H
                 thth, succ_flag = solve_glm_mle(self.theta_hat_tau, np.array(self.non_warm_up_X), \
                                                 np.array(self.non_warm_up_Y), self.lmbda/2, self.model)
@@ -75,7 +73,6 @@ class RS_GLinUCB:
                 else:
                     print("Failed")
             
-            pull_start = time()
             # Eliminate arms based on warm-up theta
             max_lcb = -np.inf
             arm_idx = []
@@ -102,7 +99,6 @@ class RS_GLinUCB:
                 if ucb_ind > max_ind:
                     max_ind = ucb_ind
                     self.a_t = i
-            self.batch_times.append(time() - pull_start)
         return self.a_t
     
     def update(self , reward , arms):
@@ -134,19 +130,18 @@ class RS_GLinUCB:
 
     def play_algorithm(self):
         for t in tqdm(range(self.horizon)):
-            arms = self.arm_set[self.t-1] if self.num_contexts == self.horizon else self.arm_set[np.random.choice(self.num_contexts)]
-            arms = [arm.reshape(-1,) for arm in arms]
+            # obtain the arms
+            if self.num_contexts != self.horizon:
+                arms = self.slot_arms[np.random.choice(self.num_contexts)]
+            else:
+                arms = self.create_arm_set(self.arm_rng)
+            
             played_arm = arms[self.play_arm(arms)]
             best_arm , best_arm_reward = self.find_best_arm_reward(arms)
             self.regret_arr.append(best_arm_reward - self.oracle.expected_reward(played_arm))
             actual_reward = self.oracle.pull(played_arm)
-            update_start = time()
             self.update(actual_reward , arms)
-            update_end = time()
-            self.batch_times[-1] += update_end - update_start
-            # self.outfile.write(f"{self.theta_hat_tau} , {self.theta_hat_w} \n")
-            # self.outfile.write(f"Reward = {actual_reward} , Regret = {best_arm_reward - self.oracle.expected_reward(played_arm)} , Played_arm = {played_arm} , Best_arm = {best_arm}\n")
-        return self.regret_arr , self.time_arr
+        return self.regret_arr
 
     def find_best_arm_reward(self , arm_set):
         '''
@@ -157,3 +152,13 @@ class RS_GLinUCB:
         return arm_set[best_arm_index] , arm_rewards[best_arm_index]
             
 
+    def create_arm_set(self , arm_rng):
+        """
+        creates an arm set using a random generator
+        """
+        arms = []
+        for a in range(self.number_arms):
+            arm = [arm_rng.random()*2 - 1 for i in range(self.dim_arms)]
+            arm = arm / np.linalg.norm(arm)
+            arms.append(arm)
+        return arms

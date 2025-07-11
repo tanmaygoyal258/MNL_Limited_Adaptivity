@@ -18,7 +18,6 @@ ctr : int
 import numpy as np
 from scipy.optimize import minimize
 from tqdm import tqdm
-from time  import time
 from utils import sigmoid
 # from logbexp.algorithms.logistic_bandit_algo import LogisticBandit
 
@@ -28,7 +27,7 @@ def mu(z):
 
 
 class OFULogPlus():
-    def __init__(self, params , armset , oracle, lazy_update_fr=1, tol=1e-7):
+    def __init__(self, params , oracle, lazy_update_fr=1, tol=1e-7):
         """
         :param lazy_update_fr:  integer dictating the frequency at which to do the learning if we want the algo to be lazy (default: 1)
         """
@@ -38,7 +37,7 @@ class OFULogPlus():
         self.log_loss_hat = 0
         self.tol = tol
         
-        self.arm_set = armset
+
         self.oracle = oracle
         self.item_count = params["num_arms"]
         self.horizon = params["horizon"]
@@ -46,12 +45,17 @@ class OFULogPlus():
         self.num_contexts = params["num_contexts"]
         self.failure_level = params["failure_level"]
         self.param_norm_ub = params["param_norm_ub"]
+        self.number_arms = params["num_arms"]
+
+        # initializing the arm set
+        if self.num_contexts != self.horizon:
+            self.arm_set = self.create_arm_set(np.random.default_rng(params["arm_seed"]))
+        self.arm_rng = np.random.default_rng(params["arm_seed"])
 
         self.theta_hat = np.zeros((self.dim,))
         self.ctr = 1
 
         self.regret_arr = []
-        self.time_arr = []
         self.rewards = np.zeros((0,))
         self.arms = np.zeros((0, self.dim))
 
@@ -114,29 +118,27 @@ class OFULogPlus():
         for t in tqdm(range(self.horizon)):
             
             # obtain the arms
-            arm_set = self.arm_set[t] if self.num_contexts == self.horizon else self.slot_arms[np.random.choice(self.num_contexts)]
+            if self.num_contexts != self.horizon:
+                arm_set = self.slot_arms[np.random.choice(self.num_contexts)]
+            else:
+                arm_set = self.create_arm_set(self.arm_rng)
 
-            pull_start = time()
             # pull the arm
             picked_arm = arm_set[self.pull(arm_set)[0]].reshape(-1,)
-            pull_end = time()
 
             # obtain the actual reward and expected regret
             best_arm , best_arm_reward = self.find_best_arm_reward(arm_set)
             actual_reward = self.oracle.pull(picked_arm)
             expected_regret = best_arm_reward - self.oracle.expected_reward(picked_arm)
 
-            update_start = time()
             # update the parameters
             self.update_parameters(picked_arm , actual_reward) 
-            update_end = time()
 
-            # store the regrets, rewards, and time
+            # store the regrets, and rewards
             self.regret_arr.append(expected_regret)
-            self.time_arr.append(update_end + pull_end - update_start - pull_start)
             self.ctr += 1
 
-        return self.regret_arr , self.time_arr
+        return self.regret_arr
     
 
     def find_best_arm_reward(self , arm_set):
@@ -176,3 +178,14 @@ class OFULogPlus():
             return np.zeros(self.dim)
         else:
             return arms.T @ (sigmoid(arms @ theta) - rewards)
+
+    def create_arm_set(self , arm_rng):
+        """
+        creates an arm set using a random generator
+        """
+        arms = []
+        for a in range(self.number_arms):
+            arm = [arm_rng.random()*2 - 1 for i in range(self.dim)]
+            arm = arm / np.linalg.norm(arm)
+            arms.append(arm)
+        return arms

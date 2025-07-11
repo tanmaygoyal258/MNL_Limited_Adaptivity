@@ -1,13 +1,8 @@
 __pycache__
-*.ipynb
 *.sh
 Results_*/*
 Results/*
 Plots/*
-barycentric_spanner.py
-B_MNL.py
-BatchLinUCB.py
-CoreIdentification.py
-D_Optimal.py
-distributional_*.py
-LinearEnv.py
+scripts/*
+result_analysis.ipynb
+Results*

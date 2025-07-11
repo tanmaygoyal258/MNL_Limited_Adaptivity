@@ -1,123 +1,73 @@
 import numpy as np
 from scipy.optimize import minimize , LinearConstraint
 from scipy.stats import norm
+import torch
 
-def information_matrix_set(distribution_X , X):
-    '''
-    returns the information matrix for the given distribution over X
-    '''
-    assert len(distribution_X) == len(X)
-    soln = np.zeros((len(X[0]) , len(X[0])))
-    for p,x in zip(distribution_X , X):
-        soln += p * np.outer(x , x)
-    return soln
 
-def information_matrix_distibution(distribution_D  , D):
+def prob_vector(arm , theta):
     '''
-    returns the information matrix for a given distribution over D which is a distribution over X
+    returns a softmax probability vector which also has prob of zero outcome
     '''
-    assert distribution_D.shape[0] == D.shape[0]
-    soln = information_matrix_set(distribution_D[0] , D[0])
-    for d_X , X in enumerate(zip(D[1:] , distribution_D[1:])):
-        soln += information_matrix_set(d_X , X)
-    return soln
+    dim = len(arm)
+    num_outcomes = int(len(theta) / dim)
+    theta_with_zero = np.hstack(([0 for _ in range(dim)] , theta))
+    inner_products = np.kron(np.eye(num_outcomes + 1) , arm) @ theta_with_zero
+    prob_vector = np.exp(inner_products) / np.sum(np.exp(inner_products))
+    return prob_vector 
 
-def weighted_norm(x , A):
-    return np.sqrt(np.dot(x , np.dot(A , x)))
 
-def g_optimal_design(X , algorithm = "d_optimal" , BS = None):
-    '''
-    returns the g optimal design for a given set of points
-    '''
-    # try:
-    #     dim = len(X[0])
-    # except:
-    #     print(X)
-    #     return None
-    # if algorithm == "barycentric_spanner":
-    #     assert BS is not None
-    #     spanning_set =  BarycentricSpanner(dim , X , BS).spanning_set
-    #     assert spanning_set.shape[0] == dim
-    #     distribution = [0 for _ in range(len(X))]
-    #     for i in range(len(X)):
-    #         if X[i] in spanning_set:
-    #             distribution[i] = 1
-    #     return [i/dim for i in distribution]
-    
-    # elif algorithm == "d_optimal":
-    #     from D_optimal import D_Optimal
-    #     spanning_set = D_Optimal(dim , X)
-    #     distribution = spanning_set.d_optimal_policy
-    #     return distribution
-    
-    # else:
-    #     assert False
-    num_arms = len(X)
-    p_0 = [np.random.random() for i in range(num_arms)]
-    p_0 = np.array(p_0) / np.sum(p_0)
-    constraint = LinearConstraint(np.ones(num_arms) , lb = 1 , ub = 1)
-    bound = [(0,1) for _ in range(num_arms)]
-    g_opt_design = minimize(d_optimal_objective , p_0 , args = (X,) , constraints = constraint , bounds = bound ).x
-    g_opt_design /= np.sum(g_opt_design)
-    return g_opt_design
-
-def sample_softmax(X , M , alpha):
-    '''
-    samples an arm from X with a alpha-softmax distribution on the weighted norms with M<
-    '''
-    weights = [weighted_norm(x , M)**2 for x in X]
-    prob_dist_unnormalized = np.array(weights) ** alpha
-    prob_dist_normalized = prob_dist_unnormalized / np.sum(prob_dist_unnormalized)
-    arm_index = np.random.choice(len(X) , p = prob_dist_normalized)
-    return prob_dist_normalized , arm_index , X[arm_index]
-
-def prob_vector(arm , theta , dim , num_outcomes):
-    '''
-    returns a softmax probability vector with an additional 1 (=exp(0)) in the denominator to account for no action chosen
-    '''
-    theta_temp = np.reshape(theta , (dim , num_outcomes))
-    if len(arm.shape) == 1: # no arms in the matrix
-        return None
-    if len(arm.shape) == 3: # multiple arms together
-        arm =  arm.reshape((arm.shape[0] , arm.shape[1]))
-    else: # only one arm at a time
-        arm = arm.reshape(1,dim)
-    inner_products = arm @ theta_temp
-    num_entries = inner_products.shape[0]
-    # adding the 0 for no action chosen
-    inner_products = np.hstack([np.array([0 for _ in range(num_entries)]).reshape(num_entries , 1) , inner_products])
-    exponent = np.exp(inner_products)
-    sum_exponents_inv = 1/np.sum(exponent , axis = 1).reshape(-1,1)
-    return (sum_exponents_inv * exponent)[: , 1:]
-
-def gradient_MNL(arm , theta , dim , num_outcomes):
+def gradient_MNL(arm , theta):
     '''
     returns the gradient of the probability vector with resepect to an arm and theta
     ''' 
-    z = prob_vector(arm , theta , dim , num_outcomes)[0]
+    z = prob_vector(arm , theta)[1:]    # leaves out the probability for 0 outcome
     return np.diag(z) - np.outer(z , z)
 
 
-def log_loss(theta , arms , outcomes , lamda , dim , num_outcomes):
-    loss = 0
-    probability_vectors = prob_vector(arms , theta  , dim , num_outcomes)
-    outcomes = np.array(outcomes.T)
-    loss = -np.sum(np.log(probability_vectors@outcomes+1e-12)) if probability_vectors is not None else 0
-    # for arm , outcome in zip(arms , outcomes):    #     loss -= np.log(prob_vector(arm , theta , dim , num_outcomes)[outcome-1])
-    return loss + lamda/2 * np.linalg.norm(theta)**2
 
+def minimize_loss_torch(theta , X , Y , lmbda , dimension):
+    """
+    implements a torch based solution to minimizing the multinomial logistic loss
+    """
 
-def d_optimal_objective(distribution_X , X):
-    '''
-    returns the log of the determinant of information matrix for the given distribution over X
-    '''
-    return -np.log(np.linalg.det(information_matrix_set(distribution_X , X)) + 1e-12)
+    if len(Y) == 0:
+        return theta , True
 
+    class Multinomial_Regression(torch.nn.Module):
+        def __init__(self , theta , dimension):
+            super().__init__()
+            self.num_outcomes = int(len(theta)/dimension)
+            self.dimension = dimension
+            self.theta = torch.hstack([torch.tensor([0 for _ in range(dimension)]) , torch.tensor(theta)])
+            self.linear = torch.nn.Linear(in_features = len(theta) , out_features = 1 , bias = False)
+            self.linear.weight.data = self.theta
 
-def minimize_omd_loss(theta , theta_prev , loss_gradient , eta , H_tilde):
-    return np.dot(loss_gradient , theta) +  1/(2*eta) * weighted_norm(theta - theta_prev , H_tilde)**2
+        def forward(self , arms):
+            arms_stacked = torch.vstack([torch.kron(torch.eye(self.num_outcomes+1) , torch.tensor(arms[i])) for i in range(len(arms))])
+            return self.linear(arms_stacked).reshape(len(arms) , -1)
 
-#############################################
+    torch.manual_seed(0)
+    epochs = 1000
+    model = Multinomial_Regression(theta , dimension)
+    criterion = torch.nn.CrossEntropyLoss(reduction = "sum" , ignore_index = 0)
+    # weight decay sets parameter for L2 reg
+    optimizer = torch.optim.SGD(model.parameters() , weight_decay = lmbda/2 , lr = 1e-4)
+    
+    for e in (range(epochs)):
+        y_pred = model.forward(X)
+        loss = criterion(y_pred , torch.tensor(Y))
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+        # resetting the first {dimension} components to 0 (corresponding to 0 outcome)
+        model.linear.weight.data[:dimension] = torch.tensor([0 for _ in range(dimension)])
+
+    # return the K components corresponding to outcomes 1 to K
+    return model.linear.weight.detach().numpy()[dimension:] , True
+
+########################################################################################
+# From Sawarni et. al (https://github.com/nirjhar-das/GLBandit_Limited_Adaptivity.git)
 
 def mat_norm(vec, matrix):
     return np.sqrt(np.dot(vec, np.dot(matrix, vec)))
@@ -163,4 +113,4 @@ def solve_glm_mle(theta_prev, X, Y, lmbda, model):
 
     theta_hat, succ_flag = res.x, res.success
     return theta_hat, succ_flag
-####################################################
+

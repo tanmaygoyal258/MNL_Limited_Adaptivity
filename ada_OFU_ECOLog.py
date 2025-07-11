@@ -1,26 +1,33 @@
 import numpy as np
 from optimization import fit_online_logistic_estimate, fit_online_logistic_estimate_bar
-from utils import sigmoid, dsigmoid, weighted_norm, probit , dprobit
+from utils import *
 from tqdm import tqdm
-from time import time
 
 class ada_OFU_ECOLog():
-    def __init__(self, params  ,armset , oracle):
-
+    def __init__(self, params , oracle):
+        
+        # initializing the reward functions and oracles
         self.reward_type = "logistic"
         self.reward_func = sigmoid if self.reward_type == "logistic" else probit
         self.d_reward_func = dsigmoid if self.reward_type == "logistic" else dprobit
-
-        self.arm_set = armset
         self.oracle = oracle
+
+        # setting the variables from params
+        self.num_contexts = params["num_contexts"]
         self.item_count = params["num_arms"]
         self.horizon = params["horizon"]
         self.dim = params["dim_arms"]
-        self.num_contexts = params["num_contexts"]
         self.l2reg = 5
         self.failure_level = params["failure_level"]
         self.param_norm_ub = params["param_norm_ub"]
-    
+        self.number_arms = params["num_arms"]
+
+        # initializing the arm set
+        if self.num_contexts != self.horizon:
+            self.arm_set = self.create_arm_set(np.random.default_rng(params["arm_seed"]))
+        self.arm_rng = np.random.default_rng(params["arm_seed"])
+
+        # initialzing the matrices and thetas
         self.vtilde_matrix = self.l2reg * np.eye(self.dim)
         self.vtilde_matrix_inv = (1 / self.l2reg) * np.eye(self.dim)
         self.theta = np.zeros((self.dim,))
@@ -30,6 +37,8 @@ class ada_OFU_ECOLog():
 
         self.regret_arr = []
         self.time_arr = []
+
+        np.random.seed(0)
 
     def update_parameters(self, arm, reward):
         # compute new estimate theta
@@ -49,7 +58,7 @@ class ada_OFU_ECOLog():
                                                                     constraint_set_radius=self.param_norm_ub,
                                                                     diameter=self.param_norm_ub,
                                                                     precision=1/self.ctr))
-        disc_norm = np.clip(weighted_norm(self.theta-theta_bar, self.vtilde_matrix), 0, np.inf)
+        disc_norm = np.clip(mat_norm(self.theta-theta_bar, self.vtilde_matrix), 0, np.inf)
 
         # update matrices
         sensitivity = self.d_reward_func(np.dot(self.theta, arm))
@@ -93,7 +102,7 @@ class ada_OFU_ECOLog():
         """
         Returns prediction + exploration_bonus for arm.
         """
-        norm = weighted_norm(arm, self.vtilde_matrix_inv)
+        norm = mat_norm(arm, self.vtilde_matrix_inv)
         pred_reward = self.reward_func(np.sum(self.theta * arm))
         bonus = self.conf_radius * norm
         return pred_reward + bonus
@@ -109,29 +118,26 @@ class ada_OFU_ECOLog():
         for t in tqdm(range(self.horizon)):
             
             # obtain the arms
-            arm_set = self.arm_set[t] if self.num_contexts == self.horizon else self.slot_arms[np.random.choice(self.num_contexts)]
+            if self.num_contexts != self.horizon:
+                arm_set = self.slot_arms[np.random.choice(self.num_contexts)]
+            else:
+                arm_set = self.create_arm_set(self.arm_rng)
 
-            pull_start = time()
-            # pull the arm
             picked_arm = arm_set[self.pull(arm_set)[0]].reshape(-1,)
-            pull_end = time()
 
             # obtain the actual reward and expected regret
             best_arm , best_arm_reward = self.find_best_arm_reward(arm_set)
-            actual_reward = self.oracle.pull(picked_arm)
+            actual_reward = self.oracle.pull(picked_arm)    # either 0 or 1
             expected_regret = best_arm_reward - self.oracle.expected_reward(picked_arm)
 
-            update_start = time()
             # update the parameters
             self.update_parameters(picked_arm , actual_reward) 
-            update_end = time()
 
             # store the regrets, rewards, and time
             self.regret_arr.append(expected_regret)
-            self.time_arr.append(update_end + pull_end - update_start - pull_start)
             self.ctr += 1
 
-        return self.regret_arr , self.time_arr
+        return self.regret_arr
     
 
     def find_best_arm_reward(self , arm_set):
@@ -141,3 +147,14 @@ class ada_OFU_ECOLog():
         arm_rewards = [self.oracle.expected_reward(arm) for arm in arm_set]
         best_arm_index = np.argmax(arm_rewards)
         return arm_set[best_arm_index] , arm_rewards[best_arm_index]
+
+    def create_arm_set(self , arm_rng):
+        """
+        creates an arm set using a random generator
+        """
+        arms = []
+        for a in range(self.number_arms):
+            arm = [arm_rng.random()*2 - 1 for i in range(self.dim)]
+            arm = arm / np.linalg.norm(arm)
+            arms.append(arm)
+        return arms
