@@ -12,4 +12,4 @@ We implement the following algorithms:
 - `OFUL-MLogB`: [Zhang & Sugiyama (2023)](https://proceedings.neurips.cc/paper_files/paper/2023/file/5ef04392708bb2340cb9b7da41225660-Paper-Conference.pdf)
 - `ada-OFU-ECOLog`: [Faury et al. (2022)](https://proceedings.mlr.press/v151/faury22a/faury22a.pdf)
 - `OFULog+`: [Lee et al. (2023)](https://arxiv.org/abs/2310.18554)
-- `RS-GLinCB`: [Sawarni et al. (2024](https://proceedings.neurips.cc/paper_files/paper/2024/file/0faa0019b0a8fcab8e6476bc43078e2e-Paper-Conference.pdf)
+- `RS-GLinCB`: [Sawarni et al. (2024)](https://proceedings.neurips.cc/paper_files/paper/2024/file/0faa0019b0a8fcab8e6476bc43078e2e-Paper-Conference.pdf)
