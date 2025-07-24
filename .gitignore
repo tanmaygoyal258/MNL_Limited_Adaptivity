@@ -1,8 +1,0 @@
-__pycache__
-*.sh
-Results_*/*
-Results/*
-Plots/*
-scripts/*
-result_analysis.ipynb
-Results*
